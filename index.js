@@ -86,7 +86,7 @@ function raritySelect(prefix, sessionId, position) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`${prefix}_rarity:${sessionId}:${position}`)
-      .setPlaceholder("اختر فئة الشخصية")
+      .setPlaceholder("Choose a character rarity")
       .addOptions(RARITY_KEYS.map((r) => ({ label: r, value: r })))
   );
 }
@@ -96,7 +96,7 @@ function charSelect(prefix, sessionId, position, rarity) {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`${prefix}_char:${sessionId}:${position}`)
-      .setPlaceholder(`اختر شخصيتك من ${rarity}`)
+      .setPlaceholder(`Choose your character from ${rarity}`)
       .addOptions(chars.map((c) => ({ label: c, value: c })))
   );
 }
@@ -124,11 +124,11 @@ function buildScrimComponents(sessionId, session) {
   const posSelect = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`scrim_pos:${sessionId}`)
-      .setPlaceholder("...اختر المركز")
+      .setPlaceholder("...Choose a position")
       .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
   );
   const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("Change Character").setEmoji("🔄").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`scrim_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`scrim_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
   );
@@ -140,11 +140,11 @@ function buildScrimKickMenu(sessionId, session) {
     const e = session.positions[p];
     return { label: `${p}: ${e.username}`, value: `${p}:${e.userId}` };
   });
-  if (!opts.length) opts.push({ label: "لا يوجد لاعبون", value: "none" });
+  if (!opts.length) opts.push({ label: "No players", value: "none" });
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`scrim_kickmenu:${sessionId}`)
-      .setPlaceholder("اختر لاعباً لطرده")
+      .setPlaceholder("Choose a player to kick")
       .addOptions(opts)
   );
 }
@@ -176,13 +176,13 @@ async function expireScrim(sessionId, client) {
 
 async function handleScrimCommand(interaction) {
   const chName = interaction.channel && "name" in interaction.channel ? interaction.channel.name : "";
-  if (chName === "chat العام")
-    return interaction.reply({ content: "❌ لا يمكن استخدام هذا الكوماند في **chat العام**!", flags: MessageFlags.Ephemeral });
+  if (chName === "general chat")
+    return interaction.reply({ content: "❌ This command cannot be used in **general chat**!", flags: MessageFlags.Ephemeral });
 
   const member = interaction.guild?.members.cache.get(interaction.user.id)
     ?? await interaction.guild?.members.fetch(interaction.user.id).catch(() => null);
   if (!member?.roles.cache.some((r) => r.name.toLowerCase() === "scrim hoster"))
-    return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **SCRIM HOSTER** فقط!", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "❌ This command is only for members with the **SCRIM HOSTER** role!", flags: MessageFlags.Ephemeral });
 
   const existingId = channelScrim.get(interaction.channelId);
   if (existingId) await expireScrim(existingId, interaction.client);
@@ -193,9 +193,9 @@ async function handleScrimCommand(interaction) {
     createdAt: new Date(), timer: null,
   };
 
-  const response = await interaction.reply({ content: "⏳ جاري إنشاء السكريم...", withResponse: true });
+  const response = await interaction.reply({ content: "⏳ Creating the scrim...", withResponse: true });
   const messageId = response.resource?.message?.id;
-  if (!messageId) return interaction.editReply({ content: "❌ فشل إنشاء السكريم." });
+  if (!messageId) return interaction.editReply({ content: "❌ Failed to create the scrim." });
 
   session.messageId = messageId;
   activeScrims.set(messageId, session);
@@ -218,17 +218,17 @@ async function handleScrimInteraction(interaction) {
 async function scrimPosition(interaction) {
   const sessionId = interaction.customId.split(":")[1];
   const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ هذا السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This scrim no longer exists.", flags: MessageFlags.Ephemeral });
   const position = interaction.values[0];
   const { id: userId, username } = interaction.user;
   for (const pos of POSITIONS)
     if (session.positions[pos]?.userId === userId) session.positions[pos] = null;
   if (session.positions[position] !== null)
-    return interaction.reply({ content: `❌ مركز **${position}** محجوز بالفعل!`, flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: `❌ Position **${position}** is already occupied!`, flags: MessageFlags.Ephemeral });
   session.positions[position] = { userId, username, character: null };
   await editScrimMessage(sessionId, session, interaction.client);
   await interaction.reply({
-    content: `✅ اخترت مركز **${position}**! الآن اختر **فئة** شخصيتك:`,
+    content: `✅ You selected position **${position}**! Now choose your character **rarity**:`,
     components: [raritySelect("scrim", sessionId, position)],
     flags: MessageFlags.Ephemeral,
   });
@@ -237,64 +237,64 @@ async function scrimPosition(interaction) {
 async function scrimRarity(interaction) {
   const [, sessionId, position] = interaction.customId.split(":");
   const rarity = interaction.values[0];
-  if (!activeScrims.get(sessionId)) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
-  await interaction.update({ content: `فئة **${rarity}** — اختر شخصيتك:`, components: [charSelect("scrim", sessionId, position, rarity)] });
+  if (!activeScrims.get(sessionId)) return interaction.update({ content: "❌ This scrim no longer exists.", components: [] });
+  await interaction.update({ content: `Rarity **${rarity}** — choose your character:`, components: [charSelect("scrim", sessionId, position, rarity)] });
 }
 
 async function scrimChar(interaction) {
   const [, sessionId, position] = interaction.customId.split(":");
   const session = activeScrims.get(sessionId);
-  if (!session) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
+  if (!session) return interaction.update({ content: "❌ This scrim no longer exists.", components: [] });
   if (session.positions[position]?.userId !== interaction.user.id)
-    return interaction.update({ content: "❌ هذا المركز ليس لك!", components: [] });
+    return interaction.update({ content: "❌ This position does not belong to you!", components: [] });
   session.positions[position].character = interaction.values[0];
-  await interaction.update({ content: `✅ اخترت **${interaction.values[0]}** في مركز **${position}**!`, components: [] });
+  await interaction.update({ content: `✅ You selected **${interaction.values[0]}** at position **${position}**!`, components: [] });
   await editScrimMessage(sessionId, session, interaction.client);
 }
 
 async function scrimLeave(interaction) {
   const sessionId = interaction.customId.split(":")[1];
   const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This scrim no longer exists.", flags: MessageFlags.Ephemeral });
   let found = false;
   for (const pos of POSITIONS)
     if (session.positions[pos]?.userId === interaction.user.id) { session.positions[pos] = null; found = true; }
-  if (!found) return interaction.reply({ content: "❌ أنت لست في هذا السكريم!", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: "✅ غادرت السكريم.", flags: MessageFlags.Ephemeral });
+  if (!found) return interaction.reply({ content: "❌ You are not in this scrim!", flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: "✅ You left the scrim.", flags: MessageFlags.Ephemeral });
   await editScrimMessage(sessionId, session, interaction.client);
 }
 
 async function scrimKickBtn(interaction) {
   const sessionId = interaction.customId.split(":")[1];
   const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
-  if (interaction.user.id !== session.hostId) return interaction.reply({ content: "❌ فقط مضيف السكريم يمكنه طرد اللاعبين!", flags: MessageFlags.Ephemeral });
-  if (!POSITIONS.some((p) => session.positions[p])) return interaction.reply({ content: "❌ لا يوجد لاعبون في السكريم.", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: "اختر اللاعب:", components: [buildScrimKickMenu(sessionId, session)], flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This scrim no longer exists.", flags: MessageFlags.Ephemeral });
+  if (interaction.user.id !== session.hostId) return interaction.reply({ content: "❌ Only the scrim host can kick players!", flags: MessageFlags.Ephemeral });
+  if (!POSITIONS.some((p) => session.positions[p])) return interaction.reply({ content: "❌ There are no players in the scrim.", flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: "Choose a player:", components: [buildScrimKickMenu(sessionId, session)], flags: MessageFlags.Ephemeral });
 }
 
 async function scrimKickMenu(interaction) {
   const sessionId = interaction.customId.split(":")[1];
   const session = activeScrims.get(sessionId);
-  if (!session) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
-  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط مضيف السكريم يمكنه طرد اللاعبين!", components: [] });
+  if (!session) return interaction.update({ content: "❌ This scrim no longer exists.", components: [] });
+  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ Only the scrim host can kick players!", components: [] });
   const value = interaction.values[0];
-  if (value === "none") return interaction.update({ content: "لا يوجد لاعبون.", components: [] });
+  if (value === "none") return interaction.update({ content: "No players.", components: [] });
   const [pos] = value.split(":");
   const kicked = session.positions[pos];
-  if (!kicked) return interaction.update({ content: "❌ اللاعب لم يعد موجوداً.", components: [] });
+  if (!kicked) return interaction.update({ content: "❌ The player is no longer present.", components: [] });
   session.positions[pos] = null;
-  await interaction.update({ content: `✅ تم طرد **${kicked.username}** من مركز **${pos}**.`, components: [] });
+  await interaction.update({ content: `✅ **${kicked.username}** was kicked from position **${pos}**.`, components: [] });
   await editScrimMessage(sessionId, session, interaction.client);
 }
 
 async function scrimChangeChar(interaction) {
   const sessionId = interaction.customId.split(":")[1];
   const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This scrim no longer exists.", flags: MessageFlags.Ephemeral });
   const pos = POSITIONS.find((p) => session.positions[p]?.userId === interaction.user.id) ?? null;
-  if (!pos) return interaction.reply({ content: "❌ أنت لست في هذا السكريم! اختر مركزاً أولاً.", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: `اختر **فئة** شخصيتك الجديدة في مركز **${pos}**:`, components: [raritySelect("scrim", sessionId, pos)], flags: MessageFlags.Ephemeral });
+  if (!pos) return interaction.reply({ content: "❌ You are not in this scrim! Choose a position first.", flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: `Choose your new character **rarity** for position **${pos}**:`, components: [raritySelect("scrim", sessionId, pos)], flags: MessageFlags.Ephemeral });
 }
 
 // ═══════════════════════════════════════════
@@ -323,11 +323,11 @@ function buildTeamComponents(prefix, sessionId) {
   const posSelect = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`${prefix}_pos:${sessionId}`)
-      .setPlaceholder("...اختر مركزك")
+      .setPlaceholder("...Choose your position")
       .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
   );
   const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${prefix}_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`${prefix}_changechar:${sessionId}`).setLabel("Change Character").setEmoji("🔄").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`${prefix}_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`${prefix}_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
   );
@@ -341,11 +341,11 @@ function buildTeamKickMenu(prefix, sessionId, session) {
       return { label: `${team} - ${p}: ${e.username}`, value: `${team}:${p}:${e.userId}` };
     })
   );
-  if (!opts.length) opts.push({ label: "لا يوجد لاعبون", value: "none" });
+  if (!opts.length) opts.push({ label: "No players", value: "none" });
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId(`${prefix}_kickmenu:${sessionId}`)
-      .setPlaceholder("اختر لاعباً لطرده")
+      .setPlaceholder("Choose a player to kick")
       .addOptions(opts)
   );
 }
@@ -357,7 +357,7 @@ function buildTeamKickMenu(prefix, sessionId, session) {
 async function teamPosition(interaction, store, editFn, title, prefix) {
   const sessionId = interaction.customId.split(":")[1];
   const session = store.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ الجلسة لم تعد موجودة.", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This session no longer exists.", flags: MessageFlags.Ephemeral });
   const position = interaction.values[0];
   const { id: userId, username } = interaction.user;
   for (const t of TEAMS)
@@ -365,12 +365,12 @@ async function teamPosition(interaction, store, editFn, title, prefix) {
       if (session.teams[t][p]?.userId === userId) session.teams[t][p] = null;
   const freeTeams = TEAMS.filter((t) => session.teams[t][position] === null);
   if (!freeTeams.length)
-    return interaction.reply({ content: `❌ مركز **${position}** ممتلئ في كلا الفريقين!`, flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: `❌ Position **${position}** is full on both teams!`, flags: MessageFlags.Ephemeral });
   const assignedTeam = freeTeams[Math.floor(Math.random() * freeTeams.length)];
   session.teams[assignedTeam][position] = { userId, username, character: null };
   await editFn(sessionId, session, interaction.client);
   await interaction.reply({
-    content: `✅ تم تعيينك في فريق **${assignedTeam}** مركز **${position}**!\nالآن اختر **فئة** شخصيتك:`,
+    content: `✅ You were assigned to team **${assignedTeam}** at position **${position}**!\nNow choose your character **rarity**:`,
     components: [raritySelect(prefix, sessionId, position)],
     flags: MessageFlags.Ephemeral,
   });
@@ -379,66 +379,66 @@ async function teamPosition(interaction, store, editFn, title, prefix) {
 async function teamRarity(interaction, store, prefix) {
   const [, sessionId, position] = interaction.customId.split(":");
   const rarity = interaction.values[0];
-  if (!store.get(sessionId)) return interaction.update({ content: "❌ الجلسة لم تعد موجودة.", components: [] });
-  await interaction.update({ content: `فئة **${rarity}** — اختر شخصيتك:`, components: [charSelect(prefix, sessionId, position, rarity)] });
+  if (!store.get(sessionId)) return interaction.update({ content: "❌ This session no longer exists.", components: [] });
+  await interaction.update({ content: `Rarity **${rarity}** — choose your character:`, components: [charSelect(prefix, sessionId, position, rarity)] });
 }
 
 async function teamChar(interaction, store, editFn, title, prefix) {
   const [, sessionId, position] = interaction.customId.split(":");
   const session = store.get(sessionId);
-  if (!session) return interaction.update({ content: "❌ الجلسة لم تعد موجودة.", components: [] });
+  if (!session) return interaction.update({ content: "❌ This session no longer exists.", components: [] });
   const found = findPlayerInTeams(session, interaction.user.id);
-  if (!found || found.position !== position) return interaction.update({ content: "❌ هذا المركز ليس لك!", components: [] });
+  if (!found || found.position !== position) return interaction.update({ content: "❌ This position does not belong to you!", components: [] });
   const character = interaction.values[0];
   session.teams[found.team][position].character = character;
-  await interaction.update({ content: `✅ اخترت **${character}** في **${found.team} - ${position}**!`, components: [] });
+  await interaction.update({ content: `✅ You selected **${character}** at **${found.team} - ${position}**!`, components: [] });
   await editFn(sessionId, session, interaction.client);
 }
 
 async function teamLeave(interaction, store, editFn, title, prefix) {
   const sessionId = interaction.customId.split(":")[1];
   const session = store.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ الجلسة لم تعد موجودة.", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This session no longer exists.", flags: MessageFlags.Ephemeral });
   const found = findPlayerInTeams(session, interaction.user.id);
-  if (!found) return interaction.reply({ content: "❌ أنت لست في هذه الجلسة!", flags: MessageFlags.Ephemeral });
+  if (!found) return interaction.reply({ content: "❌ You are not in this session!", flags: MessageFlags.Ephemeral });
   session.teams[found.team][found.position] = null;
-  await interaction.reply({ content: "✅ غادرت بنجاح.", flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: "✅ You left successfully.", flags: MessageFlags.Ephemeral });
   await editFn(sessionId, session, interaction.client);
 }
 
 async function teamKickBtn(interaction, store, prefix) {
   const sessionId = interaction.customId.split(":")[1];
   const session = store.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ الجلسة لم تعد موجودة.", flags: MessageFlags.Ephemeral });
-  if (interaction.user.id !== session.hostId) return interaction.reply({ content: "❌ فقط من أنشأ الجلسة يمكنه طرد اللاعبين!", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This session no longer exists.", flags: MessageFlags.Ephemeral });
+  if (interaction.user.id !== session.hostId) return interaction.reply({ content: "❌ Only the session creator can kick players!", flags: MessageFlags.Ephemeral });
   const hasPlayers = TEAMS.some((t) => POSITIONS.some((p) => session.teams[t][p] !== null));
-  if (!hasPlayers) return interaction.reply({ content: "❌ لا يوجد لاعبون.", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: "اختر اللاعب:", components: [buildTeamKickMenu(prefix, sessionId, session)], flags: MessageFlags.Ephemeral });
+  if (!hasPlayers) return interaction.reply({ content: "❌ There are no players.", flags: MessageFlags.Ephemeral });
+  await interaction.reply({ content: "Choose a player:", components: [buildTeamKickMenu(prefix, sessionId, session)], flags: MessageFlags.Ephemeral });
 }
 
 async function teamKickMenu(interaction, store, editFn, title, prefix) {
   const sessionId = interaction.customId.split(":")[1];
   const session = store.get(sessionId);
-  if (!session) return interaction.update({ content: "❌ الجلسة لم تعد موجودة.", components: [] });
-  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط من أنشأ الجلسة يمكنه طرد اللاعبين!", components: [] });
+  if (!session) return interaction.update({ content: "❌ This session no longer exists.", components: [] });
+  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ Only the session creator can kick players!", components: [] });
   const value = interaction.values[0];
-  if (value === "none") return interaction.update({ content: "لا يوجد لاعبون.", components: [] });
+  if (value === "none") return interaction.update({ content: "No players.", components: [] });
   const [team, pos] = value.split(":");
   const kicked = session.teams[team][pos];
-  if (!kicked) return interaction.update({ content: "❌ اللاعب لم يعد موجوداً.", components: [] });
+  if (!kicked) return interaction.update({ content: "❌ The player is no longer present.", components: [] });
   session.teams[team][pos] = null;
-  await interaction.update({ content: `✅ تم طرد **${kicked.username}** من **${team} - ${pos}**.`, components: [] });
+  await interaction.update({ content: `✅ **${kicked.username}** was kicked from **${team} - ${pos}**.`, components: [] });
   await editFn(sessionId, session, interaction.client);
 }
 
 async function teamChangeChar(interaction, store, prefix) {
   const sessionId = interaction.customId.split(":")[1];
   const session = store.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ الجلسة لم تعد موجودة.", flags: MessageFlags.Ephemeral });
+  if (!session) return interaction.reply({ content: "❌ This session no longer exists.", flags: MessageFlags.Ephemeral });
   const found = findPlayerInTeams(session, interaction.user.id);
-  if (!found) return interaction.reply({ content: "❌ أنت لست في هذه الجلسة! اختر مركزاً أولاً.", flags: MessageFlags.Ephemeral });
+  if (!found) return interaction.reply({ content: "❌ You are not in this session! Choose a position first.", flags: MessageFlags.Ephemeral });
   await interaction.reply({
-    content: `اختر **فئة** شخصيتك الجديدة في **${found.team} - ${found.position}**:`,
+    content: `Choose your new character **rarity** for **${found.team} - ${found.position}**:`,
     components: [raritySelect(prefix, sessionId, found.position)],
     flags: MessageFlags.Ephemeral,
   });
@@ -475,13 +475,13 @@ async function expireInhouse(sessionId, client) {
 
 async function handleInhouseCommand(interaction) {
   const chName = interaction.channel && "name" in interaction.channel ? interaction.channel.name : "";
-  if (chName === "chat العام")
-    return interaction.reply({ content: "❌ لا يمكن استخدام هذا الكوماند في **chat العام**!", flags: MessageFlags.Ephemeral });
+  if (chName === "general chat")
+    return interaction.reply({ content: "❌ This command cannot be used in **general chat**!", flags: MessageFlags.Ephemeral });
 
   const member = interaction.guild?.members.cache.get(interaction.user.id)
     ?? await interaction.guild?.members.fetch(interaction.user.id).catch(() => null);
   if (!member?.roles.cache.some((r) => r.name.toLowerCase() === "scrim hoster"))
-    return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **SCRIM HOSTER** فقط!", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "❌ This command is only for members with the **SCRIM HOSTER** role!", flags: MessageFlags.Ephemeral });
 
   const existingId = channelInhouse.get(interaction.channelId);
   if (existingId) await expireInhouse(existingId, interaction.client);
@@ -491,9 +491,9 @@ async function handleInhouseCommand(interaction) {
     teams: { HOME: emptyTeam(), AWAY: emptyTeam() }, createdAt: new Date(), timer: null,
   };
 
-  const response = await interaction.reply({ content: "⏳ جاري إنشاء الإن-هاوس...", withResponse: true });
+  const response = await interaction.reply({ content: "⏳ Creating the in-house...", withResponse: true });
   const messageId = response.resource?.message?.id;
-  if (!messageId) return interaction.editReply({ content: "❌ فشل إنشاء الإن-هاوس." });
+  if (!messageId) return interaction.editReply({ content: "❌ Failed to create the in-house." });
 
   session.messageId = messageId;
   activeInhouses.set(messageId, session);
@@ -544,13 +544,13 @@ async function expireTryout(sessionId, client) {
 
 async function handleTryoutCommand(interaction) {
   const chName = interaction.channel && "name" in interaction.channel ? interaction.channel.name : "";
-  if (chName === "chat العام")
-    return interaction.reply({ content: "❌ لا يمكن استخدام هذا الكوماند في **chat العام**!", flags: MessageFlags.Ephemeral });
+  if (chName === "general chat")
+    return interaction.reply({ content: "❌ This command cannot be used in **general chat**!", flags: MessageFlags.Ephemeral });
 
   const member = interaction.guild?.members.cache.get(interaction.user.id)
     ?? await interaction.guild?.members.fetch(interaction.user.id).catch(() => null);
   if (!member?.roles.cache.some((r) => r.name.toLowerCase() === "tryout hoster"))
-    return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **TRYOUT HOSTER** فقط!", flags: MessageFlags.Ephemeral });
+    return interaction.reply({ content: "❌ This command is only for members with the **TRYOUT HOSTER** role!", flags: MessageFlags.Ephemeral });
 
   const existingId = channelTryout.get(interaction.channelId);
   if (existingId) await expireTryout(existingId, interaction.client);
@@ -560,9 +560,9 @@ async function handleTryoutCommand(interaction) {
     teams: { HOME: emptyTeam(), AWAY: emptyTeam() }, createdAt: new Date(), timer: null,
   };
 
-  const response = await interaction.reply({ content: "⏳ جاري إنشاء الـ Tryout...", withResponse: true });
+  const response = await interaction.reply({ content: "⏳ Creating the tryout...", withResponse: true });
   const messageId = response.resource?.message?.id;
-  if (!messageId) return interaction.editReply({ content: "❌ فشل إنشاء الـ Tryout." });
+  if (!messageId) return interaction.editReply({ content: "❌ Failed to create the tryout." });
 
   session.messageId = messageId;
   activeTryouts.set(messageId, session);
@@ -589,9 +589,9 @@ async function handleTryoutInteraction(interaction) {
 
 async function registerCommands(token, clientId) {
   const commands = [
-    new SlashCommandBuilder().setName("scrim").setDescription("ابدأ سكريم جديد للعبة Blue Lock Rivals").toJSON(),
-    new SlashCommandBuilder().setName("inhouse").setDescription("ابدأ إن-هاوس جديد فريقين HOME وAWAY").toJSON(),
-    new SlashCommandBuilder().setName("tryout").setDescription("ابدأ Tryout جديد فريقين HOME وAWAY").toJSON(),
+    new SlashCommandBuilder().setName("scrim").setDescription("Start a new Blue Lock Rivals scrim").toJSON(),
+    new SlashCommandBuilder().setName("inhouse").setDescription("Start a new in-house match with HOME and AWAY teams").toJSON(),
+    new SlashCommandBuilder().setName("tryout").setDescription("Start a new tryout with HOME and AWAY teams").toJSON(),
   ];
   const rest = new REST().setToken(token);
   console.log("[Bot] Registering slash commands...");
