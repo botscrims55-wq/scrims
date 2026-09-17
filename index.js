@@ -28,7 +28,6 @@ import { createServer } from "http";
 
 const POSITIONS        = ["CF", "RW", "LW", "CM", "GK"];
 const TEAMS            = ["HOME", "AWAY"];
-const TRYOUT_DURATION  = 10 * 60 * 1000;
 
 const RARITY_CHARACTERS = {
   RARE:        ["Isagi", "kurona", "Gagamaru", "Chigiri", "Raichi"],
@@ -74,8 +73,19 @@ function findPlayerInTeams(session, userId) {
   return null;
 }
 
-function clearTimer(session) {
-  if (session.timer) { clearTimeout(session.timer); session.timer = null; }
+async function expireSessionsInChannel(channelId, client) {
+  const expirations = [];
+
+  const scrimId = channelScrim.get(channelId);
+  if (scrimId) expirations.push(expireScrim(scrimId, client));
+
+  const inhouseId = channelInhouse.get(channelId);
+  if (inhouseId) expirations.push(expireInhouse(inhouseId, client));
+
+  const tryoutId = channelTryout.get(channelId);
+  if (tryoutId) expirations.push(expireTryout(tryoutId, client));
+
+  await Promise.all(expirations);
 }
 
 // ─────────────────────────────────────────────
@@ -162,7 +172,6 @@ async function editScrimMessage(sessionId, session, client) {
 async function expireScrim(sessionId, client) {
   const s = activeScrims.get(sessionId);
   if (!s) return;
-  clearTimer(s);
   activeScrims.delete(sessionId);
   channelScrim.delete(s.channelId);
   try {
@@ -184,13 +193,12 @@ async function handleScrimCommand(interaction) {
   if (!member?.roles.cache.some((r) => r.name.toLowerCase() === "scrim hoster"))
     return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **SCRIM HOSTER** فقط!", flags: MessageFlags.Ephemeral });
 
-  const existingId = channelScrim.get(interaction.channelId);
-  if (existingId) await expireScrim(existingId, interaction.client);
+  await expireSessionsInChannel(interaction.channelId, interaction.client);
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
     positions: { CF: null, LW: null, RW: null, CM: null, GK: null },
-    createdAt: new Date(), timer: null,
+    createdAt: new Date(),
   };
 
   const response = await interaction.reply({ content: "⏳ جاري إنشاء السكريم...", withResponse: true });
@@ -461,7 +469,6 @@ async function editInhouseMessage(sessionId, session, client) {
 async function expireInhouse(sessionId, client) {
   const s = activeInhouses.get(sessionId);
   if (!s) return;
-  clearTimer(s);
   activeInhouses.delete(sessionId);
   channelInhouse.delete(s.channelId);
   try {
@@ -483,12 +490,11 @@ async function handleInhouseCommand(interaction) {
   if (!member?.roles.cache.some((r) => r.name.toLowerCase() === "scrim hoster"))
     return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **SCRIM HOSTER** فقط!", flags: MessageFlags.Ephemeral });
 
-  const existingId = channelInhouse.get(interaction.channelId);
-  if (existingId) await expireInhouse(existingId, interaction.client);
+  await expireSessionsInChannel(interaction.channelId, interaction.client);
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
-    teams: { HOME: emptyTeam(), AWAY: emptyTeam() }, createdAt: new Date(), timer: null,
+    teams: { HOME: emptyTeam(), AWAY: emptyTeam() }, createdAt: new Date(),
   };
 
   const response = await interaction.reply({ content: "⏳ جاري إنشاء الإن-هاوس...", withResponse: true });
@@ -530,7 +536,6 @@ async function editTryoutMessage(sessionId, session, client) {
 async function expireTryout(sessionId, client) {
   const s = activeTryouts.get(sessionId);
   if (!s) return;
-  clearTimer(s);
   activeTryouts.delete(sessionId);
   channelTryout.delete(s.channelId);
   try {
@@ -552,12 +557,11 @@ async function handleTryoutCommand(interaction) {
   if (!member?.roles.cache.some((r) => r.name.toLowerCase() === "tryout hoster"))
     return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **TRYOUT HOSTER** فقط!", flags: MessageFlags.Ephemeral });
 
-  const existingId = channelTryout.get(interaction.channelId);
-  if (existingId) await expireTryout(existingId, interaction.client);
+  await expireSessionsInChannel(interaction.channelId, interaction.client);
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
-    teams: { HOME: emptyTeam(), AWAY: emptyTeam() }, createdAt: new Date(), timer: null,
+    teams: { HOME: emptyTeam(), AWAY: emptyTeam() }, createdAt: new Date(),
   };
 
   const response = await interaction.reply({ content: "⏳ جاري إنشاء الـ Tryout...", withResponse: true });
@@ -567,7 +571,6 @@ async function handleTryoutCommand(interaction) {
   session.messageId = messageId;
   activeTryouts.set(messageId, session);
   channelTryout.set(interaction.channelId, messageId);
-  session.timer = setTimeout(() => expireTryout(messageId, interaction.client), TRYOUT_DURATION);
 
   await interaction.editReply({ content: buildTeamContent(session, "TRYOUT!"), embeds: [], components: buildTeamComponents("tryout", messageId) });
 }
