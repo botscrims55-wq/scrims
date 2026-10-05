@@ -120,8 +120,8 @@ async function openSessionLinkModal(interaction, store, prefix, sessionName) {
       new ActionRowBuilder().addComponents(
         new TextInputBuilder()
           .setCustomId("link_url")
-          .setLabel("Enter the link")
-          .setPlaceholder("https://example.com")
+          .setLabel("Paste a Roblox or session link")
+          .setPlaceholder("https://www.roblox.com/share?code=...&type=Server")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setMaxLength(1000)
@@ -372,7 +372,7 @@ async function scrimKickMenu(interaction) {
   const sessionId = interaction.customId.split(":")[1];
   const session = activeScrims.get(sessionId);
   if (!session) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
-  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط مضيف السكريم يمكنه طرد اللاعبين!", flags: MessageFlags.Ephemeral });
+  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط مضيف السكريم يمكنه طرد اللاعبين!", components: [] });
   const value = interaction.values[0];
   if (value === "none") return interaction.update({ content: "لا يوجد لاعبون.", components: [] });
   const [pos] = value.split(":");
@@ -516,7 +516,7 @@ async function teamKickMenu(interaction, store, editFn, title, prefix) {
   const sessionId = interaction.customId.split(":")[1];
   const session = store.get(sessionId);
   if (!session) return interaction.update({ content: "❌ الجلسة لم تعد موجودة.", components: [] });
-  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط من أنشأ الجلسة يمكنه طرد اللاعبين!", flags: MessageFlags.Ephemeral });
+  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط من أنشأ الجلسة يمكنه طرد اللاعبين!", components: [] });
   const value = interaction.values[0];
   if (value === "none") return interaction.update({ content: "لا يوجد لاعبون.", components: [] });
   const [team, pos] = value.split(":");
