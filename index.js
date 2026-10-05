@@ -137,7 +137,7 @@ function buildScrimComponents(sessionId, session) {
     new StringSelectMenuBuilder()
       .setCustomId(`scrim_pos:${sessionId}`)
       .setPlaceholder("...اختر المركز")
-      .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
+      .addOptions(POSITIONS.map((p) => ({ label: `${POSITION_BADGES[p]} ${p}`, value: p })))
   );
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(CHANGE_CHARACTER_BUTTON_STYLE),
@@ -330,7 +330,7 @@ function buildTeamComponents(prefix, sessionId) {
     new StringSelectMenuBuilder()
       .setCustomId(`${prefix}_pos:${sessionId}`)
       .setPlaceholder("...اختر مركزك")
-      .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
+      .addOptions(POSITIONS.map((p) => ({ label: `${POSITION_BADGES[p]} ${p}`, value: p })))
   );
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${prefix}_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(CHANGE_CHARACTER_BUTTON_STYLE),
