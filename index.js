@@ -18,9 +18,6 @@ import {
   StringSelectMenuBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle,
   MessageFlags,
 } from "discord.js";
 import { createServer } from "http";
@@ -31,8 +28,6 @@ import { createServer } from "http";
 
 const POSITIONS        = ["CF", "RW", "LW", "CM", "GK"];
 const TEAMS            = ["HOME", "AWAY"];
-const TRYOUT_DURATION  = 10 * 60 * 1000;
-
 const RARITY_CHARACTERS = {
  RARE:        ["Isagi", "kurona", "Gagamaru", "Chigiri", "Raichi"],
   EPIC:        ["Otoya", "Hirori", "Bachira", "Karasu"],
@@ -79,96 +74,6 @@ function findPlayerInTeams(session, userId) {
 
 function clearTimer(session) {
   if (session.timer) { clearTimeout(session.timer); session.timer = null; }
-}
-
-function buildLinkButton(prefix, sessionId) {
-  return new ButtonBuilder()
-    .setCustomId(`${prefix}_link:${sessionId}`)
-    .setLabel("Link")
-    .setStyle(ButtonStyle.Success);
-}
-
-function getParticipantIds(session) {
-  if (session.positions) {
-    return [...new Set(
-      Object.values(session.positions)
-        .filter(Boolean)
-        .map((player) => player.userId)
-    )];
-  }
-
-  return [...new Set(
-    TEAMS.flatMap((team) => POSITIONS.map((position) => session.teams[team][position]?.userId))
-      .filter(Boolean)
-  )];
-}
-
-async function openSessionLinkModal(interaction, store, prefix, sessionName) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = store.get(sessionId);
-  if (!session)
-    return interaction.reply({ content: "❌ هذه الجلسة لم تعد موجودة.", flags: MessageFlags.Ephemeral });
-  if (interaction.user.id !== session.hostId)
-    return interaction.reply({ content: "❌ فقط صاحب الجلسة يمكنه إرسال الرابط.", flags: MessageFlags.Ephemeral });
-  if (!getParticipantIds(session).length)
-    return interaction.reply({ content: "❌ لا يوجد لاعبون منضمون للجلسة بعد.", flags: MessageFlags.Ephemeral });
-
-  const modal = new ModalBuilder()
-    .setCustomId(`${prefix}_linkmodal:${sessionId}`)
-    .setTitle(`Send ${sessionName} link`)
-    .addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId("link_url")
-          .setLabel("Paste a Roblox or session link")
-          .setPlaceholder("https://www.roblox.com/share?code=...&type=Server")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setMaxLength(1000)
-      )
-    );
-
-  await interaction.showModal(modal);
-}
-
-async function submitSessionLink(interaction, store, sessionName) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = store.get(sessionId);
-  if (!session)
-    return interaction.reply({ content: "❌ هذه الجلسة لم تعد موجودة.", flags: MessageFlags.Ephemeral });
-  if (interaction.user.id !== session.hostId)
-    return interaction.reply({ content: "❌ فقط صاحب الجلسة يمكنه إرسال الرابط.", flags: MessageFlags.Ephemeral });
-
-  const rawUrl = interaction.fields.getTextInputValue("link_url").trim();
-  let url;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    return interaction.reply({ content: "❌ أدخل رابطاً صحيحاً يبدأ بـ https:// أو http://.", flags: MessageFlags.Ephemeral });
-  }
-  if (!["https:", "http:"].includes(url.protocol))
-    return interaction.reply({ content: "❌ أدخل رابطاً يبدأ بـ https:// أو http://.", flags: MessageFlags.Ephemeral });
-
-  const participantIds = getParticipantIds(session);
-  if (!participantIds.length)
-    return interaction.reply({ content: "❌ لا يوجد لاعبون منضمون للجلسة حالياً.", flags: MessageFlags.Ephemeral });
-
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  try {
-    const channel = await interaction.client.channels.fetch(session.channelId);
-    if (!channel?.isTextBased() || typeof channel.send !== "function")
-      return interaction.editReply({ content: "❌ تعذر العثور على قناة الجلسة." });
-
-    const mentions = participantIds.map((userId) => `<@${userId}>`).join(" ");
-    await channel.send({
-      content: `🔗 **${sessionName} link**\n${mentions}\n${url.toString()}`,
-      allowedMentions: { users: participantIds },
-    });
-    await interaction.editReply({ content: "✅ تم إرسال الرابط للاعبين المنضمين." });
-  } catch (error) {
-    console.error("[Bot] Failed to send session link:", error);
-    await interaction.editReply({ content: "❌ تعذر إرسال الرابط. حاول مرة أخرى." });
-  }
 }
 
 // ─────────────────────────────────────────────
@@ -223,8 +128,7 @@ function buildScrimComponents(sessionId, session) {
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`scrim_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`scrim_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger),
-    buildLinkButton("scrim", sessionId)
+    new ButtonBuilder().setCustomId(`scrim_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
   );
   return [posSelect, buttons];
 }
@@ -279,7 +183,6 @@ async function handleScrimCommand(interaction) {
     return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **SCRIM HOSTER** فقط!", flags: MessageFlags.Ephemeral });
 
   const existingId = channelScrim.get(interaction.channelId);
-  if (existingId) await expireScrim(existingId, interaction.client);
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
@@ -293,6 +196,7 @@ async function handleScrimCommand(interaction) {
 
   session.messageId = messageId;
   activeScrims.set(messageId, session);
+  if (existingId) await expireScrim(existingId, interaction.client);
   channelScrim.set(interaction.channelId, messageId);
 
   await interaction.editReply({ content: buildScrimContent(session), embeds: [], components: buildScrimComponents(messageId, session) });
@@ -307,7 +211,6 @@ async function handleScrimInteraction(interaction) {
   if (id.startsWith("scrim_kick:"))       return scrimKickBtn(interaction);
   if (id.startsWith("scrim_kickmenu:"))   return scrimKickMenu(interaction);
   if (id.startsWith("scrim_changechar:")) return scrimChangeChar(interaction);
-  if (id.startsWith("scrim_link:"))       return openSessionLinkModal(interaction, activeScrims, "scrim", "Scrim");
 }
 
 async function scrimPosition(interaction) {
@@ -424,8 +327,7 @@ function buildTeamComponents(prefix, sessionId) {
   const buttons = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${prefix}_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId(`${prefix}_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`${prefix}_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger),
-    buildLinkButton(prefix, sessionId)
+    new ButtonBuilder().setCustomId(`${prefix}_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
   );
   return [posSelect, buttons];
 }
@@ -580,7 +482,6 @@ async function handleInhouseCommand(interaction) {
     return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **SCRIM HOSTER** فقط!", flags: MessageFlags.Ephemeral });
 
   const existingId = channelInhouse.get(interaction.channelId);
-  if (existingId) await expireInhouse(existingId, interaction.client);
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
@@ -593,6 +494,7 @@ async function handleInhouseCommand(interaction) {
 
   session.messageId = messageId;
   activeInhouses.set(messageId, session);
+  if (existingId) await expireInhouse(existingId, interaction.client);
   channelInhouse.set(interaction.channelId, messageId);
 
   await interaction.editReply({ content: buildTeamContent(session, "IN-HOUSE!"), embeds: [], components: buildTeamComponents("inhouse", messageId) });
@@ -607,7 +509,6 @@ async function handleInhouseInteraction(interaction) {
   if (id.startsWith("inhouse_kick:"))       return teamKickBtn(interaction, activeInhouses, "inhouse");
   if (id.startsWith("inhouse_kickmenu:"))   return teamKickMenu(interaction, activeInhouses, editInhouseMessage, "IN-HOUSE!", "inhouse");
   if (id.startsWith("inhouse_changechar:")) return teamChangeChar(interaction, activeInhouses, "inhouse");
-  if (id.startsWith("inhouse_link:"))       return openSessionLinkModal(interaction, activeInhouses, "inhouse", "In-house");
 }
 
 // ═══════════════════════════════════════════
@@ -650,7 +551,6 @@ async function handleTryoutCommand(interaction) {
     return interaction.reply({ content: "❌ هذا الكوماند مخصص لأصحاب رتبة **TRYOUT HOSTER** فقط!", flags: MessageFlags.Ephemeral });
 
   const existingId = channelTryout.get(interaction.channelId);
-  if (existingId) await expireTryout(existingId, interaction.client);
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
@@ -663,8 +563,8 @@ async function handleTryoutCommand(interaction) {
 
   session.messageId = messageId;
   activeTryouts.set(messageId, session);
+  if (existingId) await expireTryout(existingId, interaction.client);
   channelTryout.set(interaction.channelId, messageId);
-  session.timer = setTimeout(() => expireTryout(messageId, interaction.client), TRYOUT_DURATION);
 
   await interaction.editReply({ content: buildTeamContent(session, "TRYOUT!"), embeds: [], components: buildTeamComponents("tryout", messageId) });
 }
@@ -678,7 +578,6 @@ async function handleTryoutInteraction(interaction) {
   if (id.startsWith("tryout_kick:"))       return teamKickBtn(interaction, activeTryouts, "tryout");
   if (id.startsWith("tryout_kickmenu:"))   return teamKickMenu(interaction, activeTryouts, editTryoutMessage, "TRYOUT!", "tryout");
   if (id.startsWith("tryout_changechar:")) return teamChangeChar(interaction, activeTryouts, "tryout");
-  if (id.startsWith("tryout_link:"))       return openSessionLinkModal(interaction, activeTryouts, "tryout", "Tryout");
 }
 
 // ═══════════════════════════════════════════
@@ -727,13 +626,6 @@ async function main() {
         if (interaction.commandName === "scrim")   return handleScrimCommand(interaction);
         if (interaction.commandName === "inhouse") return handleInhouseCommand(interaction);
         if (interaction.commandName === "tryout")  return handleTryoutCommand(interaction);
-        return;
-      }
-      if (interaction.isModalSubmit()) {
-        const id = interaction.customId;
-        if (id.startsWith("scrim_linkmodal:"))   return submitSessionLink(interaction, activeScrims, "Scrim");
-        if (id.startsWith("inhouse_linkmodal:")) return submitSessionLink(interaction, activeInhouses, "In-house");
-        if (id.startsWith("tryout_linkmodal:"))  return submitSessionLink(interaction, activeTryouts, "Tryout");
         return;
       }
       if (!interaction.isStringSelectMenu() && !interaction.isButton()) return;
