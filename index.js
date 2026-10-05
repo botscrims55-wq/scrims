@@ -14,6 +14,7 @@ import {
   REST,
   Routes,
   SlashCommandBuilder,
+  EmbedBuilder,
   ActionRowBuilder,
   StringSelectMenuBuilder,
   ButtonBuilder,
@@ -29,6 +30,9 @@ import { createServer } from "http";
 const POSITIONS        = ["CF", "RW", "LW", "CM", "GK"];
 const TEAMS            = ["HOME", "AWAY"];
 const TRYOUT_DURATION  = 10 * 60 * 1000;
+const POSITION_BADGES  = { CF: "🟥", RW: "🟦", LW: "🟩", CM: "🟨", GK: "🟪" };
+const CHANGE_CHARACTER_BUTTON_STYLE = ButtonStyle.Primary;   // Discord blurple
+const LEAVE_BUTTON_STYLE            = ButtonStyle.Secondary; // Closest built-in dark style
 
 const RARITY_CHARACTERS = {
  RARE:        ["Isagi", "kurona", "Gagamaru", "Chigiri", "Raichi"],
@@ -105,19 +109,27 @@ function charSelect(prefix, sessionId, position, rarity) {
 //  SCRIM
 // ═══════════════════════════════════════════
 
-function buildScrimContent(session) {
-  const lines = ["# Scrim!", "**Choose your position**", ""];
+function buildRosterEmbed(title, lines, status = "") {
+  const description = status ? [...lines, "", status].join("\n") : lines.join("\n");
+  return new EmbedBuilder()
+    .setColor(0x4A4D54)
+    .setTitle(`{ ${title} }`)
+    .setDescription(description);
+}
+
+function formatPositionLine(position, player) {
+  const badge = POSITION_BADGES[position] ?? "⬜";
+  if (!player) return `${badge} ${position}:`;
+  const character = player.character ? ` (${player.character})` : " (Choosing character...)";
+  return `${badge} ${position}: <@${player.userId}>${character}`;
+}
+
+function buildScrimEmbed(session, status = "") {
+  const lines = [];
   for (const pos of POSITIONS) {
-    const e = session.positions[pos];
-    if (e) {
-      const char = e.character ? ` (${e.character})` : " (Choosing character...)";
-      lines.push(`**${pos} :** <@${e.userId}>${char}`);
-    } else {
-      lines.push(`**${pos} :**`);
-    }
-    lines.push("");
+    lines.push(formatPositionLine(pos, session.positions[pos]));
   }
-  return lines.join("\n");
+  return buildRosterEmbed("SCRIM", lines, status);
 }
 
 function buildScrimComponents(sessionId, session) {
@@ -128,8 +140,8 @@ function buildScrimComponents(sessionId, session) {
       .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
   );
   const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`scrim_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(CHANGE_CHARACTER_BUTTON_STYLE),
+    new ButtonBuilder().setCustomId(`scrim_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(LEAVE_BUTTON_STYLE),
     new ButtonBuilder().setCustomId(`scrim_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
   );
   return [posSelect, buttons];
@@ -154,7 +166,7 @@ async function editScrimMessage(sessionId, session, client) {
     const ch = await client.channels.fetch(session.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: buildScrimContent(session), embeds: [], components: buildScrimComponents(sessionId, session) });
+      await msg.edit({ content: "", embeds: [buildScrimEmbed(session)], components: buildScrimComponents(sessionId, session) });
     }
   } catch { }
 }
@@ -169,7 +181,7 @@ async function expireScrim(sessionId, client) {
     const ch = await client.channels.fetch(s.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: msg.content + "\n\n**Scrim has ended**", components: [] });
+      await msg.edit({ content: "", embeds: [buildScrimEmbed(s, "Scrim has ended")], components: [] });
     }
   } catch { }
 }
@@ -201,7 +213,7 @@ async function handleScrimCommand(interaction) {
   activeScrims.set(messageId, session);
   channelScrim.set(interaction.channelId, messageId);
 
-  await interaction.editReply({ content: buildScrimContent(session), embeds: [], components: buildScrimComponents(messageId, session) });
+  await interaction.editReply({ content: "", embeds: [buildScrimEmbed(session)], components: buildScrimComponents(messageId, session) });
 }
 
 async function handleScrimInteraction(interaction) {
@@ -301,22 +313,16 @@ async function scrimChangeChar(interaction) {
 //  Shared team content/components (Inhouse & Tryout)
 // ═══════════════════════════════════════════
 
-function buildTeamContent(session, title) {
-  const lines = [`# ${title}`, ""];
+function buildTeamEmbed(session, title, status = "") {
+  const lines = [];
   for (const team of TEAMS) {
-    lines.push(`# ${team}`);
+    lines.push(team);
     for (const pos of POSITIONS) {
-      const e = session.teams[team][pos];
-      if (e) {
-        const char = e.character ? ` (${e.character})` : " (Choosing character...)";
-        lines.push(`**${pos}:** <@${e.userId}>${char}`);
-      } else {
-        lines.push(`**${pos}:**`);
-      }
+      lines.push(formatPositionLine(pos, session.teams[team][pos]));
     }
-    lines.push("");
+    if (team !== TEAMS[TEAMS.length - 1]) lines.push("");
   }
-  return lines.join("\n");
+  return buildRosterEmbed(title, lines, status);
 }
 
 function buildTeamComponents(prefix, sessionId) {
@@ -327,8 +333,8 @@ function buildTeamComponents(prefix, sessionId) {
       .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
   );
   const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`${prefix}_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`${prefix}_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`${prefix}_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(CHANGE_CHARACTER_BUTTON_STYLE),
+    new ButtonBuilder().setCustomId(`${prefix}_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(LEAVE_BUTTON_STYLE),
     new ButtonBuilder().setCustomId(`${prefix}_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
   );
   return [posSelect, buttons];
@@ -453,7 +459,7 @@ async function editInhouseMessage(sessionId, session, client) {
     const ch = await client.channels.fetch(session.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: buildTeamContent(session, "IN-HOUSE!"), embeds: [], components: buildTeamComponents("inhouse", sessionId) });
+      await msg.edit({ content: "", embeds: [buildTeamEmbed(session, "IN-HOUSE")], components: buildTeamComponents("inhouse", sessionId) });
     }
   } catch { }
 }
@@ -468,7 +474,7 @@ async function expireInhouse(sessionId, client) {
     const ch = await client.channels.fetch(s.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: msg.content + "\n\n**In-house has ended**", components: [] });
+      await msg.edit({ content: "", embeds: [buildTeamEmbed(s, "IN-HOUSE", "In-house has ended")], components: [] });
     }
   } catch { }
 }
@@ -499,7 +505,7 @@ async function handleInhouseCommand(interaction) {
   activeInhouses.set(messageId, session);
   channelInhouse.set(interaction.channelId, messageId);
 
-  await interaction.editReply({ content: buildTeamContent(session, "IN-HOUSE!"), embeds: [], components: buildTeamComponents("inhouse", messageId) });
+  await interaction.editReply({ content: "", embeds: [buildTeamEmbed(session, "IN-HOUSE")], components: buildTeamComponents("inhouse", messageId) });
 }
 
 async function handleInhouseInteraction(interaction) {
@@ -522,7 +528,7 @@ async function editTryoutMessage(sessionId, session, client) {
     const ch = await client.channels.fetch(session.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: buildTeamContent(session, "TRYOUT!"), embeds: [], components: buildTeamComponents("tryout", sessionId) });
+      await msg.edit({ content: "", embeds: [buildTeamEmbed(session, "TRYOUT")], components: buildTeamComponents("tryout", sessionId) });
     }
   } catch { }
 }
@@ -537,7 +543,7 @@ async function expireTryout(sessionId, client) {
     const ch = await client.channels.fetch(s.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: msg.content + "\n\n**Tryout has ended**", components: [] });
+      await msg.edit({ content: "", embeds: [buildTeamEmbed(s, "TRYOUT", "Tryout has ended")], components: [] });
     }
   } catch { }
 }
@@ -569,7 +575,7 @@ async function handleTryoutCommand(interaction) {
   channelTryout.set(interaction.channelId, messageId);
   session.timer = setTimeout(() => expireTryout(messageId, interaction.client), TRYOUT_DURATION);
 
-  await interaction.editReply({ content: buildTeamContent(session, "TRYOUT!"), embeds: [], components: buildTeamComponents("tryout", messageId) });
+  await interaction.editReply({ content: "", embeds: [buildTeamEmbed(session, "TRYOUT")], components: buildTeamComponents("tryout", messageId) });
 }
 
 async function handleTryoutInteraction(interaction) {
