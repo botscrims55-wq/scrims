@@ -26,7 +26,7 @@ import { createServer } from "http";
 // Constants
 // ─────────────────────────────────────────────
 
-const POSITIONS        = ["CF", "RW", "LW", "CM", "GK"];
+const POSITIONS        = ["CF", "LW", "RW", "CM", "GK"];
 const TEAMS            = ["HOME", "AWAY"];
 const RARITY_CHARACTERS = {
  RARE:        ["Isagi", "kurona", "Gagamaru", "Chigiri", "Raichi"],
@@ -103,56 +103,12 @@ function charSelect(prefix, sessionId, position, rarity) {
 //  SCRIM
 // ═══════════════════════════════════════════
 
-function buildScrimContent(session) {
-  const lines = ["# Scrim!", "**Choose your position**", ""];
-  for (const pos of POSITIONS) {
-    const e = session.positions[pos];
-    if (e) {
-      const char = e.character ? ` (${e.character})` : " (Choosing character...)";
-      lines.push(`**${pos} :** <@${e.userId}>${char}`);
-    } else {
-      lines.push(`**${pos} :**`);
-    }
-    lines.push("");
-  }
-  return lines.join("\n");
-}
-
-function buildScrimComponents(sessionId, session) {
-  const posSelect = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`scrim_pos:${sessionId}`)
-      .setPlaceholder("...اختر المركز")
-      .addOptions(POSITIONS.map((p) => ({ label: p, value: p })))
-  );
-  const buttons = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`scrim_changechar:${sessionId}`).setLabel("تغيير الشخصية").setEmoji("🔄").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId(`scrim_leave:${sessionId}`).setLabel("Leave Position").setEmoji("🚪").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId(`scrim_kick:${sessionId}`).setLabel("Kick Player").setStyle(ButtonStyle.Danger)
-  );
-  return [posSelect, buttons];
-}
-
-function buildScrimKickMenu(sessionId, session) {
-  const opts = POSITIONS.filter((p) => session.positions[p] !== null).map((p) => {
-    const e = session.positions[p];
-    return { label: `${p}: ${e.username}`, value: `${p}:${e.userId}` };
-  });
-  if (!opts.length) opts.push({ label: "لا يوجد لاعبون", value: "none" });
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`scrim_kickmenu:${sessionId}`)
-      .setPlaceholder("اختر لاعباً لطرده")
-      .addOptions(opts)
-  );
-}
-
 async function editScrimMessage(sessionId, session, client) {
   try {
     const ch = await client.channels.fetch(session.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: buildScrimContent(session), embeds: [], components: buildScrimComponents(sessionId, session) });
+      await msg.edit({ content: buildTeamContent(session, "SCRIM!"), embeds: [], components: buildTeamComponents("scrim", sessionId) });
     }
   } catch { }
 }
@@ -186,7 +142,7 @@ async function handleScrimCommand(interaction) {
 
   const session = {
     messageId: "", channelId: interaction.channelId, hostId: interaction.user.id,
-    positions: { CF: null, LW: null, RW: null, CM: null, GK: null },
+    teams: { HOME: emptyTeam(), AWAY: emptyTeam() },
     createdAt: new Date(), timer: null,
   };
 
@@ -199,104 +155,22 @@ async function handleScrimCommand(interaction) {
   if (existingId) await expireScrim(existingId, interaction.client);
   channelScrim.set(interaction.channelId, messageId);
 
-  await interaction.editReply({ content: buildScrimContent(session), embeds: [], components: buildScrimComponents(messageId, session) });
+  await interaction.editReply({ content: buildTeamContent(session, "SCRIM!"), embeds: [], components: buildTeamComponents("scrim", messageId) });
 }
 
 async function handleScrimInteraction(interaction) {
   const id = interaction.customId;
-  if (id.startsWith("scrim_pos:"))        return scrimPosition(interaction);
-  if (id.startsWith("scrim_rarity:"))     return scrimRarity(interaction);
-  if (id.startsWith("scrim_char:"))       return scrimChar(interaction);
-  if (id.startsWith("scrim_leave:"))      return scrimLeave(interaction);
-  if (id.startsWith("scrim_kick:"))       return scrimKickBtn(interaction);
-  if (id.startsWith("scrim_kickmenu:"))   return scrimKickMenu(interaction);
-  if (id.startsWith("scrim_changechar:")) return scrimChangeChar(interaction);
-}
-
-async function scrimPosition(interaction) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ هذا السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
-  const position = interaction.values[0];
-  const { id: userId, username } = interaction.user;
-  for (const pos of POSITIONS)
-    if (session.positions[pos]?.userId === userId) session.positions[pos] = null;
-  if (session.positions[position] !== null)
-    return interaction.reply({ content: `❌ مركز **${position}** محجوز بالفعل!`, flags: MessageFlags.Ephemeral });
-  session.positions[position] = { userId, username, character: null };
-  await editScrimMessage(sessionId, session, interaction.client);
-  await interaction.reply({
-    content: `✅ اخترت مركز **${position}**! الآن اختر **فئة** شخصيتك:`,
-    components: [raritySelect("scrim", sessionId, position)],
-    flags: MessageFlags.Ephemeral,
-  });
-}
-
-async function scrimRarity(interaction) {
-  const [, sessionId, position] = interaction.customId.split(":");
-  const rarity = interaction.values[0];
-  if (!activeScrims.get(sessionId)) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
-  await interaction.update({ content: `فئة **${rarity}** — اختر شخصيتك:`, components: [charSelect("scrim", sessionId, position, rarity)] });
-}
-
-async function scrimChar(interaction) {
-  const [, sessionId, position] = interaction.customId.split(":");
-  const session = activeScrims.get(sessionId);
-  if (!session) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
-  if (session.positions[position]?.userId !== interaction.user.id)
-    return interaction.update({ content: "❌ هذا المركز ليس لك!", components: [] });
-  session.positions[position].character = interaction.values[0];
-  await interaction.update({ content: `✅ اخترت **${interaction.values[0]}** في مركز **${position}**!`, components: [] });
-  await editScrimMessage(sessionId, session, interaction.client);
-}
-
-async function scrimLeave(interaction) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
-  let found = false;
-  for (const pos of POSITIONS)
-    if (session.positions[pos]?.userId === interaction.user.id) { session.positions[pos] = null; found = true; }
-  if (!found) return interaction.reply({ content: "❌ أنت لست في هذا السكريم!", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: "✅ غادرت السكريم.", flags: MessageFlags.Ephemeral });
-  await editScrimMessage(sessionId, session, interaction.client);
-}
-
-async function scrimKickBtn(interaction) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
-  if (interaction.user.id !== session.hostId) return interaction.reply({ content: "❌ فقط مضيف السكريم يمكنه طرد اللاعبين!", flags: MessageFlags.Ephemeral });
-  if (!POSITIONS.some((p) => session.positions[p])) return interaction.reply({ content: "❌ لا يوجد لاعبون في السكريم.", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: "اختر اللاعب:", components: [buildScrimKickMenu(sessionId, session)], flags: MessageFlags.Ephemeral });
-}
-
-async function scrimKickMenu(interaction) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = activeScrims.get(sessionId);
-  if (!session) return interaction.update({ content: "❌ السكريم لم يعد موجوداً.", components: [] });
-  if (interaction.user.id !== session.hostId) return interaction.update({ content: "❌ فقط مضيف السكريم يمكنه طرد اللاعبين!", components: [] });
-  const value = interaction.values[0];
-  if (value === "none") return interaction.update({ content: "لا يوجد لاعبون.", components: [] });
-  const [pos] = value.split(":");
-  const kicked = session.positions[pos];
-  if (!kicked) return interaction.update({ content: "❌ اللاعب لم يعد موجوداً.", components: [] });
-  session.positions[pos] = null;
-  await interaction.update({ content: `✅ تم طرد **${kicked.username}** من مركز **${pos}**.`, components: [] });
-  await editScrimMessage(sessionId, session, interaction.client);
-}
-
-async function scrimChangeChar(interaction) {
-  const sessionId = interaction.customId.split(":")[1];
-  const session = activeScrims.get(sessionId);
-  if (!session) return interaction.reply({ content: "❌ السكريم لم يعد موجوداً.", flags: MessageFlags.Ephemeral });
-  const pos = POSITIONS.find((p) => session.positions[p]?.userId === interaction.user.id) ?? null;
-  if (!pos) return interaction.reply({ content: "❌ أنت لست في هذا السكريم! اختر مركزاً أولاً.", flags: MessageFlags.Ephemeral });
-  await interaction.reply({ content: `اختر **فئة** شخصيتك الجديدة في مركز **${pos}**:`, components: [raritySelect("scrim", sessionId, pos)], flags: MessageFlags.Ephemeral });
+  if (id.startsWith("scrim_pos:"))        return teamPosition(interaction, activeScrims, editScrimMessage, "SCRIM!", "scrim");
+  if (id.startsWith("scrim_rarity:"))     return teamRarity(interaction, activeScrims, "scrim");
+  if (id.startsWith("scrim_char:"))       return teamChar(interaction, activeScrims, editScrimMessage, "SCRIM!", "scrim");
+  if (id.startsWith("scrim_leave:"))      return teamLeave(interaction, activeScrims, editScrimMessage, "SCRIM!", "scrim");
+  if (id.startsWith("scrim_kick:"))       return teamKickBtn(interaction, activeScrims, "scrim");
+  if (id.startsWith("scrim_kickmenu:"))   return teamKickMenu(interaction, activeScrims, editScrimMessage, "SCRIM!", "scrim");
+  if (id.startsWith("scrim_changechar:")) return teamChangeChar(interaction, activeScrims, "scrim");
 }
 
 // ═══════════════════════════════════════════
-//  Shared team content/components (Inhouse & Tryout)
+//  Shared team content/components (Inhouse, Scrim & Tryout)
 // ═══════════════════════════════════════════
 
 function buildTeamContent(session, title) {
@@ -305,16 +179,18 @@ function buildTeamContent(session, title) {
     lines.push(`# ${team}`);
     for (const pos of POSITIONS) {
       const e = session.teams[team][pos];
-      if (e) {
-        const char = e.character ? ` (${e.character})` : " (Choosing character...)";
-        lines.push(`**${pos}:** <@${e.userId}>${char}`);
-      } else {
-        lines.push(`**${pos}:**`);
-      }
+      const player = e
+        ? ` <@${e.userId}>${e.character ? ` (${e.character})` : " (Choosing character...)"}`
+        : "";
+      lines.push(`> **${pos} :**${player}`);
     }
     lines.push("");
   }
   return lines.join("\n");
+}
+
+function buildInhouseContent(session) {
+  return buildTeamContent(session, "INHOUSE");
 }
 
 function buildTeamComponents(prefix, sessionId) {
@@ -451,7 +327,7 @@ async function editInhouseMessage(sessionId, session, client) {
     const ch = await client.channels.fetch(session.channelId);
     if (ch?.isTextBased()) {
       const msg = await ch.messages.fetch(sessionId);
-      await msg.edit({ content: buildTeamContent(session, "IN-HOUSE!"), embeds: [], components: buildTeamComponents("inhouse", sessionId) });
+      await msg.edit({ content: buildInhouseContent(session), embeds: [], components: buildTeamComponents("inhouse", sessionId) });
     }
   } catch { }
 }
@@ -497,7 +373,7 @@ async function handleInhouseCommand(interaction) {
   if (existingId) await expireInhouse(existingId, interaction.client);
   channelInhouse.set(interaction.channelId, messageId);
 
-  await interaction.editReply({ content: buildTeamContent(session, "IN-HOUSE!"), embeds: [], components: buildTeamComponents("inhouse", messageId) });
+  await interaction.editReply({ content: buildInhouseContent(session), embeds: [], components: buildTeamComponents("inhouse", messageId) });
 }
 
 async function handleInhouseInteraction(interaction) {
